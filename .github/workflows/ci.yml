@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   quality:
-    name: Lint, typecheck, and build
+    name: Lint, typecheck, build, and smoke test
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -40,3 +40,12 @@ jobs:
         run: npm run build
         env:
           NEXT_TELEMETRY_DISABLED: 1
+
+      - name: Smoke test health endpoint
+        shell: bash
+        run: |
+          npm run start > /tmp/project01-next.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          curl --fail --silent --show-error --retry 20 --retry-connrefused --retry-delay 1 http://127.0.0.1:3000/api/health \
+            | node -e 'let data=""; process.stdin.on("data", chunk => data += chunk); process.stdin.on("end", () => { const health = JSON.parse(data); if (health.status !== "ok" || health.service !== "project01") process.exit(1); console.log("Health endpoint OK"); });'
