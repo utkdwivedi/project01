@@ -9,7 +9,7 @@ A Next.js app used to practise a repeatable software delivery path: quality gate
 - Docker multi-stage image and Docker Compose
 - Trivy scan for high/critical OS and library vulnerabilities (unfixed issues ignored)
 - GitHub Container Registry (GHCR) publishing after checks pass on `main` or version tags
-- Prometheus + Blackbox Exporter + provisioned Grafana dashboard
+- Prometheus + Blackbox Exporter + provisioned Grafana dashboard and alert rules
 - Manual SSH deployment workflow, gated by repository secrets
 
 ## Run locally
@@ -79,7 +79,7 @@ GHCR packages can be private by default. To pull the image from a server, either
 
 ## Optional SSH deployment
 
-Deployment is deliberately manual. It does not run on every push and will only work after a Linux host with Docker Engine and Docker Compose v2 is ready.
+The manual deploy workflow is available under **Actions → Deploy → Run workflow**. It accepts only `latest`, `sha-<40 lowercase hex chars>`, or `vX.Y.Z` image tags. Deployment is deliberately manual. It does not run on every push and will only work after a Linux host with Docker Engine and Docker Compose v2 is ready.
 
 Configure these repository **Actions secrets**:
 - `DEPLOY_HOST`: server hostname or IP
