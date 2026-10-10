@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 const pipeline = [
   { n: "01", name: "Install", command: "npm ci", detail: "Reproducible dependencies" },
   { n: "02", name: "Lint", command: "npm run lint", detail: "Catch common mistakes" },
@@ -15,10 +17,10 @@ export default function Home() {
   return (
     <main className="shell">
       <nav className="topbar" aria-label="Main navigation">
-        <a className="wordmark" href="/" aria-label="Project01 home">
+        <Link className="wordmark" href="/" aria-label="Project01 home">
           <span className="mark">P<span>01</span></span>
           <span>PROJECT<span className="wordmark-muted"> / DELIVERY</span></span>
-        </a>
+        </Link>
         <div className="nav-meta"><span className="nav-dot" /> ENGINEERING PREVIEW</div>
       </nav>
       <section className="hero">
@@ -68,7 +70,7 @@ export default function Home() {
         </div>
       </section>
       <footer className="footer">
-        <a className="wordmark" href="/"><span className="mark">P<span>01</span></span><span>PROJECT<span className="wordmark-muted"> / DELIVERY</span></span></a>
+        <Link className="wordmark" href="/"><span className="mark">P<span>01</span></span><span>PROJECT<span className="wordmark-muted"> / DELIVERY</span></span></Link>
         <p>Built to make the path from code to runtime visible.</p>
         <span className="footer-meta">FOUNDATION / 2026</span>
       </footer>
