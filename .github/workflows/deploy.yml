@@ -1,0 +1,103 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Validated GHCR tag (latest, sha-<40 hex chars>, or vX.Y.Z)"
+        required: true
+        default: latest
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: project01-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Linux host
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate inputs and configure SSH
+        shell: bash
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          [[ "$IMAGE_TAG" =~ ^(latest|sha-[0-9a-f]{40}|v[0-9]+\.[0-9]+\.[0-9]+)$ ]] || {
+            echo "Invalid image tag. Use latest, sha-<40 lowercase hex chars>, or vX.Y.Z." >&2
+            exit 1
+          }
+
+          : "${DEPLOY_HOST:?Missing repository secret DEPLOY_HOST}"
+          : "${DEPLOY_USER:?Missing repository secret DEPLOY_USER}"
+          : "${DEPLOY_PATH:?Missing repository secret DEPLOY_PATH}"
+          : "${DEPLOY_SSH_KEY:?Missing repository secret DEPLOY_SSH_KEY}"
+          : "${DEPLOY_KNOWN_HOSTS:?Missing repository secret DEPLOY_KNOWN_HOSTS}"
+
+          [[ "$DEPLOY_HOST" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "DEPLOY_HOST must be a hostname or IPv4 address." >&2; exit 1; }
+          [[ "$DEPLOY_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]] || { echo "DEPLOY_USER contains unsupported characters." >&2; exit 1; }
+          [[ "$DEPLOY_PATH" =~ ^/[A-Za-z0-9_./-]+$ ]] || { echo "DEPLOY_PATH must be an absolute path without spaces." >&2; exit 1; }
+          [[ "$DEPLOY_PATH" != *"/../"* && "$DEPLOY_PATH" != */.. ]] || { echo "DEPLOY_PATH must not contain parent-directory segments." >&2; exit 1; }
+
+          DEPLOY_PORT="${DEPLOY_PORT:-22}"
+          [[ "$DEPLOY_PORT" =~ ^[0-9]{1,5}$ ]] && (( DEPLOY_PORT >= 1 && DEPLOY_PORT <= 65535 )) || {
+            echo "DEPLOY_PORT must be between 1 and 65535." >&2
+            exit 1
+          }
+          echo "DEPLOY_PORT=$DEPLOY_PORT" >> "$GITHUB_ENV"
+
+          if [[ -n "$GHCR_USERNAME" || -n "$GHCR_PULL_TOKEN" ]]; then
+            [[ -n "$GHCR_USERNAME" && -n "$GHCR_PULL_TOKEN" ]] || {
+              echo "Set both GHCR_USERNAME and GHCR_PULL_TOKEN, or leave both empty for a public package." >&2
+              exit 1
+            }
+            [[ "$GHCR_USERNAME" =~ ^[A-Za-z0-9-]+$ ]] || { echo "GHCR_USERNAME contains unsupported characters." >&2; exit 1; }
+          fi
+
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+
+      - name: Deploy selected image
+        shell: bash
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
+        run: |
+          set -euo pipefail
+          DEPLOY_PORT="${DEPLOY_PORT:-22}"
+          SSH_ARGS=(-i "$HOME/.ssh/id_ed25519" -p "$DEPLOY_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$HOME/.ssh/known_hosts")
+          SCP_ARGS=(-i "$HOME/.ssh/id_ed25519" -P "$DEPLOY_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$HOME/.ssh/known_hosts")
+          REMOTE="$DEPLOY_USER@$DEPLOY_HOST"
+
+          ssh "${SSH_ARGS[@]}" "$REMOTE" "mkdir -p '$DEPLOY_PATH'"
+
+          if [[ -n "$GHCR_PULL_TOKEN" ]]; then
+            printf '%s' "$GHCR_PULL_TOKEN" | ssh "${SSH_ARGS[@]}" "$REMOTE" "docker login ghcr.io -u '$GHCR_USERNAME' --password-stdin"
+          fi
+
+          scp "${SCP_ARGS[@]}" deploy/compose.yaml "$REMOTE:$DEPLOY_PATH/compose.yaml"
+          ssh "${SSH_ARGS[@]}" "$REMOTE" "cd '$DEPLOY_PATH' && IMAGE_TAG='$IMAGE_TAG' docker compose -f compose.yaml pull web && IMAGE_TAG='$IMAGE_TAG' docker compose -f compose.yaml up -d --wait --wait-timeout 90 --remove-orphans web && IMAGE_TAG='$IMAGE_TAG' docker compose -f compose.yaml ps"
