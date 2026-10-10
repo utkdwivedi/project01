@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Project01 — Delivery Foundation
 
-## Getting Started with this now:
+A small Next.js application used to practise a repeatable delivery workflow: local development, automated quality checks, a containerized runtime, and a health endpoint.
 
-First, run the development server:
+> This repository is being rebuilt from an incomplete/mixed project state. Existing tensor visuals and research notes are intentionally retained while the app and delivery tooling are restored.
+
+## Stack
+
+- Next.js 16, React 19, TypeScript
+- ESLint and TypeScript checks
+- Docker multi-stage build, running as a non-root user
+- Docker Compose with an HTTP-based container health check
+- GitHub Actions CI on pushes and pull requests to `main`
+
+## Run locally
+
+Requirements: Node.js 22 and npm.
 
 ```bash
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Verify the app
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run lint
+npm run typecheck
+npm run build
+```
 
-## Learn More
+The health endpoint is available at [http://localhost:3000/api/health](http://localhost:3000/api/health). It returns JSON with a service identifier, health status, and timestamp.
 
-To learn more about Next.js, take a look at the following resources:
+## Run with Docker
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+docker compose up --build -d
+docker compose ps
+curl http://localhost:3000/api/health
+docker compose logs -f web
+docker compose down
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The container uses Next.js standalone output, exposes port 3000, and runs as an unprivileged user. Compose marks the service healthy only when the health endpoint returns a successful response.
 
-## Deploy on Vercel
+## Delivery workflow
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+GitHub Actions runs `npm ci`, linting, type checking, and a production build. A green CI run means these checks passed in the runner; it does not by itself mean the application has been deployed.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Next steps
+
+- Add a deployment target and environment-specific configuration.
+- Add runtime monitoring/metrics and alerting once a hosting target is chosen.
+- Review the tracked local database and old research files before deciding whether any should be moved or removed.
+- Add a smoke test that starts the production container and verifies its HTTP health endpoint.
+
+## Existing material
+
+The root-level tensor images and `webREdo_clean.txt` are preserved for later review. The file `project_filebrowser.db` is also left untouched in this bootstrap; inspect it before deciding whether it belongs in version control.
