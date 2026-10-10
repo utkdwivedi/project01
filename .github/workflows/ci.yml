@@ -1,8 +1,9 @@
-name: CI
+name: CI and container delivery
 
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
 
@@ -50,5 +51,52 @@ jobs:
           curl --fail --silent --show-error --retry 20 --retry-connrefused --retry-delay 1 http://127.0.0.1:3000/api/health \
             | node -e 'let data=""; process.stdin.on("data", chunk => data += chunk); process.stdin.on("end", () => { const health = JSON.parse(data); if (health.status !== "ok" || health.service !== "project01") process.exit(1); console.log("Health endpoint OK"); });'
 
-      - name: Build Docker image
-        run: docker build --tag project01:ci .
+  container:
+    name: Build, scan, and publish container
+    needs: quality
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build container image
+        run: docker build --tag project01:scan .
+
+      - name: Scan image for high and critical vulnerabilities
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: project01:scan
+          scan-type: image
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push'
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+
+      - name: Publish immutable and rolling tags
+        if: github.event_name == 'push'
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
+        shell: bash
+        run: |
+          IMAGE_NAME="${IMAGE_NAME,,}"
+          docker tag project01:scan "$IMAGE_NAME:sha-$GITHUB_SHA"
+          docker push "$IMAGE_NAME:sha-$GITHUB_SHA"
+
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
+            docker tag project01:scan "$IMAGE_NAME:latest"
+            docker push "$IMAGE_NAME:latest"
+          else
+            docker tag project01:scan "$IMAGE_NAME:$GITHUB_REF_NAME"
+            docker push "$IMAGE_NAME:$GITHUB_REF_NAME"
+          fi
