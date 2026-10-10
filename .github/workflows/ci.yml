@@ -49,3 +49,6 @@ jobs:
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
           curl --fail --silent --show-error --retry 20 --retry-connrefused --retry-delay 1 http://127.0.0.1:3000/api/health \
             | node -e 'let data=""; process.stdin.on("data", chunk => data += chunk); process.stdin.on("end", () => { const health = JSON.parse(data); if (health.status !== "ok" || health.service !== "project01") process.exit(1); console.log("Health endpoint OK"); });'
+
+      - name: Build Docker image
+        run: docker build --tag project01:ci .
